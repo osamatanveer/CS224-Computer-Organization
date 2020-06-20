@@ -1,0 +1,591 @@
+// WHEN ASSEMBLING THE SYSTEMVERILOG MODULES TOGETHER, PLEASE DO
+// NOT USE ANY CODES PRESENTED BY THE INSTRUCTOR. I BUILT THE
+// PROCESSOR FROM SCRATCH. PLEASE PUT EACH MODULE IN A 
+// SEPARTED      
+// DESIGN FILE
+
+`timescale 1ns / 1ps
+
+module processor_tb();
+
+    logic clk, reset;
+    logic [31:0] regf [31:0];
+    logic [31:0] RAM[63:0];
+    
+    processor dut(clk, reset, regf, RAM);  
+    
+    initial 
+        begin
+            clk = 0;
+            reset = 1; #20;
+            reset = 0;
+        end  
+    
+    always
+        begin
+            #20; clk = ~clk;
+        end    
+        
+endmodule
+
+`timescale 1ns / 1ps
+
+module processor (input logic clk, reset,
+                  output logic [31:0] regf [31:0],
+                  output logic [31:0] RAM[63:0]); 
+
+    logic [31:0] pcPlus4F, pcBranchD, pcDash, pcF, instr, instrD, pcPlus4D;
+    logic [4:0]WriteRegW;
+    logic [31:0] rd1, rd2;
+    logic RegWriteD, MemToRegD, MemWriteD;
+    logic [2:0] ALUControlD;
+    logic ALUSrcD, RegDstD, branchD;
+    logic [31:0] signImmD;
+    logic [31:0] signImmDAfterShift;
+    logic stallF, stallD, FlushE;
+    logic [31:0] outMux1D, outMux2D;
+    logic equalD, pcSrcD;
+    logic ForwardAD, ForwardBD;
+    logic RegWriteE, MemToRegE, MemWriteE, ALUSrcE, RegDstE;
+    logic [2:0] ALUControlE;
+    logic [4:0] rsE, rtE, rdE, WriteRegE;
+    logic [31:0] SignImmE, rd1E, rd2E;
+    logic [31:0] ResultW, SrcAE, SrcBE, WriteDataE, aluOutput; 
+    logic zero; // ALU Signal
+    
+    logic RegWriteM, MemToRegM, MemWriteM;
+    logic [31:0] ALUOutM, WriteDataM, rdW, ReadDataM;
+    logic [4:0] WriteRegM;
+    logic [31:0] rdM;    
+    
+    logic RegWriteW, MemToRegW;
+    logic [31:0] ReadDataW, ALUOutW;
+    logic [31:0] rd1D, rd2D;
+    logic [4:0] rsD, rtD, rdD;
+    
+    logic [31:0] tempRegFile [31:0];
+    logic [31:0] tempRAM[63:0];
+    
+    logic [1:0] ForwardAE, ForwardBE;
+    
+	// before FtoD reg
+	mux2 #(32) pcSelectMux(pcPlus4F, pcBranchD, pcSrcD, pcDash);
+	flopr #(32) pcReg(clk, reset, ~stallF , pcDash, pcF);
+	imem im(pcF[7:2], instr);
+	adder fAdder(pcF, 32'd4, pcPlus4F);
+	
+	PipeFtoD ftd(instr, pcPlus4F, reset, ~stallD, clk, pcSrcD, instrD, pcPlus4D);
+    	
+	// after FtoDReg before DtoEReg
+    
+	regfile rf(clk, RegWriteW, instrD[25:21], instrD[20:16], WriteRegW, ResultW, rd1, rd2, tempRegFile);
+	controller ctrlr(instrD[31:26], instrD[5:0], RegWriteD, MemToRegD, MemWriteD, 
+	                ALUControlD, ALUSrcD, RegDstD, branchD);
+	signext se(instrD[15:0], signImmD);
+	sl2 shift(signImmD, signImmDAfterShift);
+	adder dAdder(signImmDAfterShift, pcPlus4D, pcBranchD);                
+	mux2 #(32) rd1mux(rd1, ALUOutM, ForwardAD, outMux1D);
+	mux2 #(32) rd2mux(rd2, ALUOutM, ForwardBD, outMux2D);
+	equal checkEqual(outMux1D, outMux2D, equalD);
+    and2 andD(equalD, branchD, pcSrcD);
+    
+
+    PipeDtoE dte(clk, reset, FlushE, RegWriteD, MemToRegD, MemWriteD, ALUControlD, 
+                ALUSrcD, RegDstD, rd1, rd2, instrD[25:21], instrD[20:16], instrD[15:11], signImmD,
+                RegWriteE, MemToRegE, MemWriteE, ALUControlE, ALUSrcE, RegDstE,
+                rd1E, rd2E, rsE, rtE, rdE, SignImmE); // clr missing
+    
+    // after DtoEReg before EtoMReg
+    mux2 #(5) regSelMux(rtE, rdE, RegDstE, WriteRegE);
+    mux3 #(32) srcAEMux(rd1E, ResultW, ALUOutM, ForwardAE, SrcAE);            
+	mux3 #(32) srcBE1stMux(rd2E, ResultW, ALUOutM, ForwardBE, WriteDataE);
+	mux2 #(32) srcBE2ndMux(WriteDataE, SignImmE, ALUSrcE, SrcBE);
+	
+	alu ALU(SrcAE, SrcBE, ALUControlE , aluOutput, zero);
+	
+	PipeEtoM etm(clk, reset, RegWriteE, MemToRegE, MemWriteE,
+	             aluOutput, WriteDataE, WriteRegE, 
+	             RegWriteM, MemToRegM, MemWriteM, ALUOutM, 
+	             WriteDataM, WriteRegM);   
+	
+	// after EtoMReg before MtoWReg
+	dmem dm(clk, MemWriteM, ALUOutM, WriteDataM, rdM, tempRAM);
+	
+	PipeMtoW mtw(clk, reset, RegWriteM, MemToRegM, rdM, ALUOutM, 
+                WriteRegM, RegWriteW, MemToRegW, rdW, ALUOutW, WriteRegW);
+	
+	mux2 #(32) be2ndMux(ALUOutW, rdW, MemToRegW, ResultW);
+	
+	HazardUnit hu(clk, RegWriteW, WriteRegW, RegWriteM, MemToRegM, WriteRegM, WriteRegE,
+	               RegWriteE, MemToRegE, rsE, rtE, rsD, rtD, branchD, 
+	               ForwardAE, ForwardBE, FlushE, stallD, stallF, ForwardAD, ForwardBD);
+	
+	assign regf = tempRegFile;
+	assign RAM = tempRAM;
+	
+endmodule
+
+`timescale 1ns / 1ps
+
+// paramaterized 2-to-1 MUX
+module mux2 #(parameter WIDTH = 8)
+             (input  logic[WIDTH-1:0] d0, d1,  
+              input  logic s, 
+              output logic[WIDTH-1:0] y);
+  
+   assign y = s ? d1 : d0; 
+endmodule
+
+`timescale 1ns / 1ps
+
+// parameterized register
+module flopr #(parameter WIDTH = 8)
+              (input logic clk, reset, en, 
+	       input logic[WIDTH-1:0] d, 
+               output logic[WIDTH-1:0] q);
+
+  always_ff@(posedge clk, posedge reset)
+    begin
+        if (reset) q <= 0; 
+        else       q <= d;
+        if (~en) q <= d;
+    end
+endmodule
+
+`timescale 1ns / 1ps
+
+module adder (input  logic[31:0] a, b,
+              output logic[31:0] y);
+     
+     assign y = a + b;
+endmodule
+
+`timescale 1ns / 1ps
+
+module PipeFtoD(input logic[31:0] instr, PcPlus4F,
+                input logic reset, EN, clk, clr,		// StallD will be connected as this EN
+                output logic[31:0] instrD, PcPlus4D);
+
+    always_ff @(posedge clk)
+        begin
+        if (clr | reset) 
+            begin
+                instrD <= 32'd0;
+                PcPlus4D <= 32'd0;
+            end
+        if (EN)
+            begin
+            instrD<=instr;
+            PcPlus4D<=PcPlus4F;
+            end
+        end        
+endmodule
+
+`timescale 1ns / 1ps
+
+module regfile (input    logic clk, we3, 
+                input    logic [4:0]  ra1, ra2, wa3, 
+                input    logic [31:0] wd3, 
+                output   logic [31:0] rd1, rd2,
+                output logic [31:0] regf[31:0]);
+
+    logic [31:0] rf [31:0];
+
+  // three ported register file: read two ports combinationally
+  // write third port on rising edge of clock. Register0 hardwired to 0.
+
+    always_ff @(negedge clk)
+        if (we3) 
+            rf [wa3] <= wd3;	
+
+    assign rd1 = (ra1 != 0) ? rf [ra1] : 0;
+    assign rd2 = (ra2 != 0) ? rf[ ra2] : 0;
+    assign regf = rf;
+    
+endmodule
+
+`timescale 1ns / 1ps
+
+module controller(input  logic[5:0] op, funct,
+                  output logic     regwrite, memtoreg,
+                  output logic     memwrite,
+                  output logic[2:0] alucontrol,
+                  output logic     alusrc, regdst,
+                  output logic     branch);
+
+   logic [1:0] aluop;
+
+   maindec md (op, memtoreg, memwrite, branch, alusrc, regdst, regwrite, 
+         jump, aluop);
+
+   aludec  ad (funct, aluop, alucontrol);
+
+endmodule
+
+`timescale 1ns / 1ps
+
+module maindec (input logic[5:0] op, 
+	              output logic memtoreg, memwrite, branch,
+	              output logic alusrc, regdst, regwrite, jump,
+	              output logic[1:0] aluop );
+   logic [8:0] controls;
+
+   assign {regwrite, regdst, alusrc, branch, memwrite,
+                memtoreg,  aluop, jump} = controls;
+
+  always_comb
+    case(op)
+      6'b000000: controls <= 9'b110000100; // R-type
+      6'b100011: controls <= 9'b101001000; // LW
+      6'b101011: controls <= 9'b001010000; // SW
+      6'b000100: controls <= 9'b000100010; // BEQ
+      6'b001000: controls <= 9'b101000000; // ADDI
+      6'b000010: controls <= 9'b000000001; // J
+      default:   controls <= 9'bxxxxxxxxx; // illegal op
+    endcase
+endmodule
+
+`timescale 1ns / 1ps
+
+module aludec (input    logic[5:0] funct,
+               input    logic[1:0] aluop,
+               output   logic[2:0] alucontrol);
+  always_comb
+    case(aluop)
+      2'b00: alucontrol  = 3'b010;  // add  (for lw/sw/addi)
+      2'b01: alucontrol  = 3'b110;  // sub   (for beq)
+      default: case(funct)          // R-TYPE instructions
+          6'b100000: alucontrol  = 3'b010; // ADD
+          6'b100010: alucontrol  = 3'b110; // SUB
+          6'b100100: alucontrol  = 3'b000; // AND
+          6'b100101: alucontrol  = 3'b001; // OR
+          6'b101010: alucontrol  = 3'b111; // SLT
+          default:   alucontrol  = 3'bxxx; // ???
+        endcase
+    endcase
+endmodule
+
+`timescale 1ns / 1ps
+
+module signext (input  logic[15:0] a,
+                output logic[31:0] y);
+              
+  assign y = {{16{a[15]}}, a};    // sign-extends 16-bit a
+endmodule
+
+`timescale 1ns / 1ps
+
+module sl2 (input  logic[31:0] a,
+            output logic[31:0] y);
+     
+     assign y = {a[29:0], 2'b00}; // shifts left by 2
+endmodule
+
+`timescale 1ns / 1ps
+
+module equal(input logic [31:0] a, b, 
+            output logic y);
+    always_comb
+        if (a == b) y = 1;
+        else y = 0;            
+endmodule
+
+`timescale 1ns / 1ps
+
+module and2(input logic a, b, 
+            output logic y);
+    assign y = a & b;
+endmodule
+
+`timescale 1ns / 1ps
+
+module PipeDtoE(input logic clk, reset, clr, 
+                input logic RegWriteD, MemtoRegD, MemWriteD,
+                input logic [2:0] ALUControlD, 
+                input logic ALUSrcD, RegDstD,
+                input logic [31:0] rd1D, rd2D, 
+                input logic [4:0] rsD, rtD, rdD,
+                input logic [31:0] signImmD,
+                output logic RegWriteE, MemToRegE, MemWriteE,
+                output logic [2:0] ALUControlE,
+                output logic ALUSrcE, RegDstE,
+                output logic [31:0] rd1E, rd2E,
+                output logic [4:0] rsE, rtE, rdE,
+                output logic [31:0] signImmE);
+                
+    always_ff @ (posedge clk, posedge reset)
+        begin
+            // Setting register to default on the start
+            if (reset | clr) 
+                begin
+                    RegWriteE <= 0;
+                    MemToRegE <= 0;
+                    MemWriteE <= 0;
+                    ALUControlE <= 3'b000;
+                    ALUSrcE <= 0;
+                    RegDstE <= 0;
+                    rd1E <= 32'd0;
+                    rd2E <= 32'd0;
+                    rsE <= 5'd0;
+                    rtE <= 5'd0;
+                    rdE <= 5'd0;
+                    signImmE <= 32'd0;
+                end
+            else
+                begin
+                    RegWriteE <= RegWriteD;
+                    MemToRegE <= MemtoRegD;
+                    MemWriteE <= MemWriteD;
+                    ALUControlE <= ALUControlD;
+                    ALUSrcE <= ALUSrcD;
+                    RegDstE <= RegDstD;
+                    rd1E <= rd1D;
+                    rd2E <= rd2D;
+                    rsE <= rsD;
+                    rtE <= rtD;
+                    rdE <= rdD;
+                    signImmE <= signImmD;
+                end
+        end
+
+endmodule
+
+`timescale 1ns / 1ps
+
+module mux3 #(parameter WIDTH = 8)
+             (input  logic[WIDTH-1:0] d0, d1, d2,  
+              input  logic [1:0] s, 
+              output logic[WIDTH-1:0] y);
+    always_comb
+        begin
+            if (~s[1] & ~s[0]) y <= d0;
+            else if (~s[1] & s[0]) y <= d1;
+            else if (s[1] & ~s[0]) y <= d2;
+        end
+    
+endmodule
+
+`timescale 1ns / 1ps
+
+module alu(input  logic [31:0] a, b, 
+           input  logic [2:0]  alucont, 
+           output logic [31:0] result,
+           output logic zero);
+    
+    always_comb
+        case(alucont)
+            3'b010: result = a + b;
+            3'b110: result = a - b;
+            3'b000: result = a & b;
+            3'b001: result = a | b;
+            3'b111: result = (a < b) ? 1 : 0;
+            default: result = {32{1'bx}};
+        endcase
+    
+    assign zero = (result == 0) ? 1'b1 : 1'b0;
+    
+endmodule
+
+`timescale 1ns / 1ps
+module PipeEtoM(input logic clk, reset, 
+                input logic RegWriteE, MemtoRegE, MemWriteE,
+                input logic [31:0] ALUOutE, WriteDataE,
+                input logic [4:0] WriteRegE,
+                output logic RegWriteM, MemtoRegM, MemWriteM,
+                output logic [31:0] ALUOutM, WriteDataM,
+                output logic [4:0] WriteRegM);
+                
+    always_ff @ (posedge clk)
+        begin
+            // If reset, set everything 0
+            if (reset) 
+                begin
+                    RegWriteM <= 0;
+                    MemtoRegM <= 0;
+                    MemWriteM <= 0;
+                    ALUOutM <= 32'd0;
+                    WriteDataM <= 32'd0;
+                    WriteRegM <= 5'd0;
+                end
+            // else, propogate data
+            else
+                begin
+                    RegWriteM <= RegWriteE;
+                    MemtoRegM <= MemtoRegE;
+                    MemWriteM <= MemWriteE;
+                    ALUOutM <= ALUOutE;
+                    WriteDataM <= WriteDataE;
+                    WriteRegM <= WriteRegE;
+                end
+            
+        end
+
+endmodule
+
+`timescale 1ns / 1ps
+
+// External data memory used by MIPS single-cycle processor
+
+module dmem (input  logic        clk, we,
+             input  logic[31:0]  a, wd,
+             output logic[31:0]  rd,
+             output logic [31:0] outRAM[63:0]);
+
+    logic  [31:0] RAM[63:0];
+  
+    assign rd = RAM[a[31:2]];    // word-aligned  read (for lw)
+
+    always_ff @(posedge clk)
+     if (we)
+       RAM[a[31:2]] <= wd;      // word-aligned write (for sw)
+    
+    assign outRAM = RAM;    
+endmodule
+
+`timescale 1ns / 1ps
+
+module PipeMtoW(input logic clk, reset,
+                input logic RegWriteM, MemtoRegM,
+                input logic [31:0] ReadDataM, ALUOutM, 
+                input logic [4:0] WriteRegM,
+                output logic RegWriteW, MemtoRegW,
+                output logic [31:0] ReadDataW, ALUOutW,
+                output logic [4:0] WriteRegW);
+
+    always_ff @ (posedge clk)
+        begin
+            // if reset, set everything 0
+            if (reset)
+                begin
+                    RegWriteW <= 0;
+                    MemtoRegW <= 0;
+                    ReadDataW <= 32'd0;
+                    ALUOutW <= 32'd0;
+                    WriteRegW <= 5'd0;
+                end
+            // else, propogate data    
+            else 
+                begin
+                    RegWriteW <= RegWriteM;
+                    MemtoRegW <= MemtoRegM;
+                    ReadDataW <= ReadDataM;
+                    ALUOutW <= ALUOutM;
+                    WriteRegW <= WriteRegM; 
+                end
+        end
+endmodule
+
+`timescale 1ns / 1ps
+// Hazard Unit with inputs and outputs named
+// according to the convention that is followed on the book.
+
+module HazardUnit(input logic clk, RegWriteW,
+                input logic [4:0] WriteRegW,
+                input logic RegWriteM,MemToRegM,
+                input logic [4:0] WriteRegM, WriteRegE,
+                input logic RegWriteE,MemToRegE,
+                input logic [4:0] rsE,rtE,
+                input logic [4:0] rsD,rtD,
+                input logic BranchD,
+                output logic [1:0] ForwardAE,ForwardBE,
+                output logic FlushE,StallD,StallF,
+                output logic ForwardAD, ForwardBD);
+    logic lwstall;
+    logic branchStall;
+    
+    always_comb
+        begin
+        
+        if ((rsE != 0) & (rsE == WriteRegM) & RegWriteM)
+            ForwardAE = 2'b10;
+        else if ((rsE != 0) & (rsE == WriteRegW) & RegWriteW)
+            ForwardAE = 2'b01;
+        else
+            ForwardAE = 2'b00;
+        
+        if ((rtE != 0) & (rtE == WriteRegM) & RegWriteM)
+            ForwardBE = 2'b10;
+        else if ((rtE != 0) & (rtE == WriteRegW) & RegWriteW)
+            ForwardBE = 2'b01;
+        else
+            ForwardBE = 2'b00;
+        
+        if ((rsD != 0) & (rsD == WriteRegM) & RegWriteM) ForwardAD = 1;
+        else ForwardAD = 0;
+        if ((rtD != 0) & (rtD == WriteRegM) & RegWriteM) ForwardBD = 1;
+        else ForwardBD = 0;
+        
+        if (((rsD == rtE) | (rtD == rtE)) & MemToRegE) lwstall = 1;
+        else lwstall = 0;   
+        
+        if ((BranchD & RegWriteE & ((WriteRegE == rsD) | WriteRegE == rtD))
+                        | (BranchD & MemToRegM & ((WriteRegM == rsD) | (WriteRegM == rtD)))) branchStall = 1;
+        else branchStall = 0;
+        
+        if (lwstall | branchStall) 
+            begin
+                StallF = 1;
+                StallD = 1;
+                FlushE = 1;
+            end
+        else 
+            begin
+                StallF = 0;
+                StallD = 0;
+                FlushE = 0;
+            end
+        end
+endmodule
+
+`timescale 1ns / 1ps
+
+module imem ( input logic [5:0] addr, output logic [31:0] instr);
+
+// imem is modeled as a lookup table, a stored-program byte-addressable ROM
+	always_comb
+	   case ({addr,2'b00})
+//		address		instruction
+//		-------		-----------
+//      UNCOMMENT BELOW TO TEST USING NO HAZARD INSTRUCTIONS
+		8'h00: instr = 32'h20080010; //addi $t0, $zero, 0x0010
+		8'h04: instr = 32'h20090015; //addi $t1, $zero, 0x0015
+		8'h08: instr = 32'h200A0012; //addi $t2, $zero, 0x0012
+		8'h0c: instr = 32'h200B0010; //addi $t3, $zero, 0x0010 
+		8'h10: instr = 32'h200C0018; //addi $t4, $zero, 0x0018
+		8'h14: instr = 32'h21100007; //addi $s0, $t0, 0x0007
+		8'h18: instr = 32'hAC080004; //sw $t0, 0x0004($zero)
+		8'h1c: instr = 32'h01098820; //add $s1, $t0, $t1
+		8'h20: instr = 32'h01495025; //or $t2, $t2, $t1
+		8'h24: instr = 32'h0100A82A; //slt $s5, $t0, $zero
+		8'h28: instr = 32'h016CB024; //and $s6, $t3, $t4
+		8'h2c: instr = 32'h01284822; //sub $t1, $t1, $t0
+		8'h30: instr = 32'h8C1F0004; //lw $ra, 0x0004($zero)
+		8'h34: instr = 32'h110BFFFB; //beq $t2, $s0, 0xFFFB
+
+//      UNCOMMENT BELOW TO TEST WHEN COMPUTE HAZARDS OCCUR
+//        8'h00: instr = 32'h20080015; //addi $t0, $zero, 0x0015
+//        8'h04: instr = 32'h21090010; //addi $t1, $t0, 0x0010
+//        8'h08: instr = 32'h01285020; //add $t2, $t1, $t0
+
+//      UNCOMMENT BELOW TO TEST WHEN LOAD USE HAZARDS OCCUR
+//        8'h00: instr = 32'h20080015; //addi $t0, $zero, 0x0015
+//		8'h04: instr = 32'h20090010; //addi $t1, $zero, 0x0010
+//		8'h08: instr = 32'h20100007; //addi $s0, $zero, 0x0007 
+//		8'h0c: instr = 32'h20110008; //addi $s1, $zero, 0x0008
+//		8'h10: instr = 32'hAC080000; //sw $t0, 0x0000($zero)
+//		8'h14: instr = 32'h8C030000; //lw $v1, 0x0000($zero)
+//		8'h18: instr = 32'h00701022; //sub $v0, $v1, $s0
+
+//      UNCOMMENT BELOW TO TEST WHEN BRANCH HAZARDS OCCUR
+//        8'h00: instr = 32'h20080000; //addi $t0, $zero, 0x0000
+//		8'h04: instr = 32'h11000002; //beq $t0, $zero, 0x0002 
+//		8'h08: instr = 32'h20090004; //addi $t1, $zero, 0x0004
+//		8'h0c: instr = 32'h21090001; //addi $t1, $t0, 0x0001
+//		8'h10: instr = 32'h21090002; //addi $t1, $t0, 0x0002
+//		8'h14: instr = 32'h20090003; //addi $t1, $zero, 0x0003
+//		8'h18: instr = 32'hAC090000; //sw $t1, 0x0000($zero)        
+        
+        default:  instr = {32{1'bx}};	// unknown address
+	   endcase
+endmodule
+

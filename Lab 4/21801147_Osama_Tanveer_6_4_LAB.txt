@@ -1,0 +1,227 @@
+`timescale 1ns / 1ps
+
+module top_tb();
+
+logic[31:0] writeData, dataAdr;
+logic clk, reset, memWrite;
+
+top dut(clk, reset, writeData, dataAdr, memWrite);
+
+initial 
+    begin
+        clk = 0;
+        reset = 1; #20ns; 
+        reset = 0; 
+    end
+    
+always
+    begin
+        #20; clk = ~clk; 
+    end
+    
+endmodule
+
+
+`timescale 1ns / 1ps
+// Top level system including MIPS and memories
+
+module top  (input   logic 	 clk, reset,            
+	     output  logic[31:0] writedata, dataadr,            
+	     output  logic       memwrite);  
+
+   logic [31:0] pc, instr, readdata;    
+
+   // instantiate processor and memories  
+   mips mips (clk, reset, pc, instr, memwrite, dataadr, writedata, readdata);  
+   imem imem (pc[7:2], instr);  
+   dmem dmem (clk, memwrite, dataadr, writedata, readdata);
+
+endmodule
+
+`timescale 1ns / 1ps
+// single-cycle MIPS processor, with controller and datapath
+
+module mips (input  logic        clk, reset,
+             output logic[31:0]  pc,
+             input  logic[31:0]  instr,
+             output logic        memwrite,
+             output logic[31:0]  aluout, writedata,
+             input  logic[31:0]  readdata);
+
+  logic        memtoreg, pcsrc, zero, alusrc, regdst, regwrite, jump, jumpByRegister, add4ForPush;
+  logic [2:0]  alucontrol;
+
+  controller c (instr[31:26], instr[5:0], zero, memtoreg, memwrite, pcsrc,
+                        alusrc, regdst, regwrite, jump, jumpByRegister, add4ForPush, alucontrol);
+
+  datapath dp (clk, reset, memtoreg, pcsrc, alusrc, regdst, regwrite, jump, jumpByRegister, add4ForPush,
+                          alucontrol, zero, pc, instr, aluout, writedata, readdata);
+
+endmodule
+
+`timescale 1ns / 1ps
+module controller(input  logic[5:0] op, funct,
+                  input  logic     zero,
+                  output logic     memtoreg, memwrite,
+                  output logic     pcsrc, alusrc,
+                  output logic     regdst, regwrite,
+                  output logic     jump, jumpByRegister, add4ForPush,
+                  output logic[2:0] alucontrol);
+
+   logic [1:0] aluop;
+   logic       branch;
+
+   maindec md (op, funct, memtoreg, memwrite, branch, alusrc, regdst, regwrite, 
+		 jump, jumpByRegister, add4ForPush, aluop);
+
+   aludec  ad (funct, aluop, alucontrol);
+
+   assign pcsrc = branch & zero;
+
+endmodule
+
+`timescale 1ns / 1ps
+module maindec (input logic[5:0] op, 
+                input logic[5:0] funct, 
+	              output logic memtoreg, memwrite, branch,
+	              output logic alusrc, regdst, regwrite, jump, jumpByRegister, add4ForPush,
+	              output logic[1:0] aluop);
+   logic [10:0] controls;
+
+   assign {regwrite, regdst, alusrc, branch, memwrite,
+                memtoreg,  aluop, jump, jumpByRegister, add4ForPush} = controls;
+
+  always_comb
+    begin
+        case(op)
+          6'b000000: 
+            if (funct == 6'b001001) controls <= 11'b11000000110; //jalr
+            else controls <= 11'b11000010000; // R-type
+          6'b100011: controls <= 11'b10100100000; // LW
+          6'b101011: controls <= 11'b00101000000; // SW
+          6'b000100: controls <= 11'b00010001000; // BEQ
+          6'b001000: controls <= 11'b10100000000; // ADDI
+          6'b000010: controls <= 11'b00000000100; // J
+          6'b000001: controls <= 11'b10001001001; // PUSH
+          default:   controls <= 11'bxxxxxxxxxx; // illegal op
+        endcase
+    end
+endmodule
+
+`timescale 1ns / 1ps
+module aludec (input    logic[5:0] funct,
+               input    logic[1:0] aluop,
+               output   logic[2:0] alucontrol);
+  always_comb
+    case(aluop)
+      2'b00: alucontrol  = 3'b010;  // add  (for lw/sw/addi)
+      2'b01: alucontrol  = 3'b110;  // sub   (for beq)
+      default: case(funct)          // R-TYPE instructions
+          6'b100000: alucontrol  = 3'b010; // ADD
+          6'b100010: alucontrol  = 3'b110; // SUB
+          6'b100100: alucontrol  = 3'b000; // AND
+          6'b100101: alucontrol  = 3'b001; // OR
+          6'b101010: alucontrol  = 3'b111; // SLT
+          default:   alucontrol  = 3'bxxx; // ???
+        endcase
+    endcase
+endmodule
+
+`timescale 1ns / 1ps
+module datapath (input  logic clk, reset, memtoreg, pcsrc, alusrc, regdst,
+                 input  logic regwrite, jump, jumpByRegister, add4ForPush,
+		         input  logic[2:0]  alucontrol, 
+                 output logic zero, 
+		         output logic[31:0] pc, 
+	             input  logic[31:0] instr,
+                 output logic[31:0] aluout, writedata, 
+	             input  logic[31:0] readdata);
+
+  logic [4:0]  writereg;
+  logic [31:0] pcnext, pcnextbr, pcplus4, pcbranch, temp, dataToWrite, tempSrcB;
+  logic [31:0] tempForALU, tempForA1Selection, tempForA3Selection;
+  logic [31:0] signimm, signimmsh, srca, srcb, result;
+ 
+  // next PC logic
+  flopr #(32) pcreg(clk, reset, pcnext, pc);
+  adder       pcadd1(pc, 32'b100, pcplus4);
+  sl2         immsh(signimm, signimmsh);
+  adder       pcadd2(pcplus4, signimmsh, pcbranch);
+  mux2 #(32)  pcbrmux(pcplus4, pcbranch, pcsrc,
+                      pcnextbr);
+  //jalr
+  mux2 #(32) muxForJalr({pcplus4[31:28], 
+                    instr[25:0], 2'b00}, srca, jumpByRegister, temp);
+  
+  mux2 #(32)  pcmux(pcnextbr, temp, jump, pcnext);
+
+// register file logic
+    mux2 #(32) wdChoose(result, pcplus4, jumpByRegister, dataToWrite);
+    
+    mux2 #(5) a1chooseMux(instr[25:21], 5'd29, add4ForPush, tempForA1Selection); // This mux added
+        
+    regfile     rf (clk, regwrite, tempForA1Selection, instr[20:16], writereg,
+                   dataToWrite, srca, writedata);
+    
+    mux2 #(5)    wrmux (instr[20:16], instr[15:11], regdst, tempForA3Selection);
+    
+    mux2 #(5) a3chooseMux(tempForA3Selection, 5'd29, add4ForPush ,writereg); // This mux added
+    
+    mux2 #(32)  resmux (aluout, readdata, memtoreg, result);
+    signext         se (instr[15:0], signimm);
+    
+    // ALU logic
+    mux2 #(32)  srcbmux (writedata, signimm, alusrc, tempForALU);
+    mux2 #(32) srcbor4(tempForALU, 32'd4, add4ForPush, srcb); // This mux added
+    alu         alu (srca, srcb, alucontrol, aluout, zero);
+
+endmodule
+
+`timescale 1ns / 1ps
+// External instruction memory used by MIPS single-cycle
+// processor. It models instruction memory as a stored-program 
+// ROM, with address as input, and instruction as output
+
+
+module imem ( input logic [5:0] addr, output logic [31:0] instr);
+
+// imem is modeled as a lookup table, a stored-program byte-addressable ROM
+	always_comb
+	   case ({addr,2'b00})		   	// word-aligned fetch
+//		address		instruction
+//		-------		-----------
+		8'h00: instr = 32'h20020005;  	// disassemble, by hand 
+		8'h04: instr = 32'h2003000c;  	// or with a program,
+		8'h08: instr = 32'h00432025;  	// to find out what
+		8'h0c: instr = 32'h00432824;  	// this program does!
+		8'h10: instr = 32'h00A43020;     
+		8'h14: instr = 32'h10A60002;
+		8'h18: instr = 32'h0043382A;
+		8'h1c: instr = 32'h00434022;
+		8'h20: instr = 32'hAC670068;
+		8'h24: instr = 32'h8C780068;
+        8'h28: instr = 32'h201d003f; // addi $sp, $zero, 63
+        8'h2c: instr = 32'h4030000;  // push $v1
+        8'h30: instr = 32'h4030000;  // push $v1
+        8'h34: instr = 32'h00a0e809; // jalr $v0, $a1  
+	     default:  instr = {32{1'bx}};	// unknown address
+	   endcase
+endmodule
+
+module alu(input  logic [31:0] a, b, 
+           input  logic [2:0]  alucont, 
+           output logic [31:0] result,
+           output logic zero);
+
+    assign zero = (result == 0);
+
+    always_comb
+        case (alucont)
+            3'b000: result = a & b; 
+            3'b001: result = a | b; 
+            3'b010: result = a + b; 
+            3'b110: result = a - b; 
+            3'b111: result = a < b; 
+            default: result = {32{1'bx}}; 
+    endcase
+endmodule

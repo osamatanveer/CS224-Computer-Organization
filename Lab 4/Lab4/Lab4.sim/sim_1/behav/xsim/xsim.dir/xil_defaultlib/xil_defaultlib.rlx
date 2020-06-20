@@ -1,0 +1,21 @@
+0.6
+2019.2
+Nov  6 2019
+21:42:20
+/home/osama/Desktop/CS224/Labs/Lab 4/Lab4/Lab4.sim/sim_1/behav/xsim/glbl.v,1573089660,verilog,,,,glbl,,,,,,,,
+/home/osama/Desktop/CS224/Labs/Lab 4/Lab4/Lab4.srcs/sources_1/new/adder.sv,1586811511,systemVerilog,,/home/osama/Desktop/CS224/Labs/Lab 4/Lab4/Lab4.srcs/sources_1/new/alu.sv,,adder,,,,,,,,
+/home/osama/Desktop/CS224/Labs/Lab 4/Lab4/Lab4.srcs/sources_1/new/alu.sv,1586160930,systemVerilog,,/home/osama/Desktop/CS224/Labs/Lab 4/Lab4/Lab4.srcs/sources_1/new/aludec.sv,,alu,,,,,,,,
+/home/osama/Desktop/CS224/Labs/Lab 4/Lab4/Lab4.srcs/sources_1/new/aludec.sv,1586871876,systemVerilog,,/home/osama/Desktop/CS224/Labs/Lab 4/Lab4/Lab4.srcs/sources_1/new/controller.sv,,aludec,,,,,,,,
+/home/osama/Desktop/CS224/Labs/Lab 4/Lab4/Lab4.srcs/sources_1/new/controller.sv,1586895274,systemVerilog,,/home/osama/Desktop/CS224/Labs/Lab 4/Lab4/Lab4.srcs/sources_1/new/datapath.sv,,controller,,,,,,,,
+/home/osama/Desktop/CS224/Labs/Lab 4/Lab4/Lab4.srcs/sources_1/new/datapath.sv,1586897165,systemVerilog,,/home/osama/Desktop/CS224/Labs/Lab 4/Lab4/Lab4.srcs/sources_1/new/dmem.sv,,datapath,,,,,,,,
+/home/osama/Desktop/CS224/Labs/Lab 4/Lab4/Lab4.srcs/sources_1/new/dmem.sv,1586811555,systemVerilog,,/home/osama/Desktop/CS224/Labs/Lab 4/Lab4/Lab4.srcs/sources_1/new/flopr.sv,,dmem,,,,,,,,
+/home/osama/Desktop/CS224/Labs/Lab 4/Lab4/Lab4.srcs/sources_1/new/flopr.sv,1586811493,systemVerilog,,/home/osama/Desktop/CS224/Labs/Lab 4/Lab4/Lab4.srcs/sources_1/new/imem.sv,,flopr,,,,,,,,
+/home/osama/Desktop/CS224/Labs/Lab 4/Lab4/Lab4.srcs/sources_1/new/imem.sv,1587021568,systemVerilog,,/home/osama/Desktop/CS224/Labs/Lab 4/Lab4/Lab4.srcs/sources_1/new/maindec.sv,,imem,,,,,,,,
+/home/osama/Desktop/CS224/Labs/Lab 4/Lab4/Lab4.srcs/sources_1/new/maindec.sv,1586896014,systemVerilog,,/home/osama/Desktop/CS224/Labs/Lab 4/Lab4/Lab4.srcs/sources_1/new/mips.sv,,maindec,,,,,,,,
+/home/osama/Desktop/CS224/Labs/Lab 4/Lab4/Lab4.srcs/sources_1/new/mips.sv,1586895346,systemVerilog,,/home/osama/Desktop/CS224/Labs/Lab 4/Lab4/Lab4.srcs/sources_1/new/mux2.sv,,mips,,,,,,,,
+/home/osama/Desktop/CS224/Labs/Lab 4/Lab4/Lab4.srcs/sources_1/new/mux2.sv,1586811517,systemVerilog,,/home/osama/Desktop/CS224/Labs/Lab 4/Lab4/Lab4.srcs/sources_1/new/regfile.sv,,mux2,,,,,,,,
+/home/osama/Desktop/CS224/Labs/Lab 4/Lab4/Lab4.srcs/sources_1/new/regfile.sv,1586811524,systemVerilog,,/home/osama/Desktop/CS224/Labs/Lab 4/Lab4/Lab4.srcs/sources_1/new/signext.sv,,regfile,,,,,,,,
+/home/osama/Desktop/CS224/Labs/Lab 4/Lab4/Lab4.srcs/sources_1/new/signext.sv,1585921654,systemVerilog,,/home/osama/Desktop/CS224/Labs/Lab 4/Lab4/Lab4.srcs/sources_1/new/sl2.sv,,signext,,,,,,,,
+/home/osama/Desktop/CS224/Labs/Lab 4/Lab4/Lab4.srcs/sources_1/new/sl2.sv,1585921608,systemVerilog,,/home/osama/Desktop/CS224/Labs/Lab 4/Lab4/Lab4.srcs/sources_1/new/top.sv,,sl2,,,,,,,,
+/home/osama/Desktop/CS224/Labs/Lab 4/Lab4/Lab4.srcs/sources_1/new/top.sv,1585920639,systemVerilog,,/home/osama/Desktop/CS224/Labs/Lab 4/Lab4/Lab4.srcs/sources_1/new/top_tb.sv,,top,,,,,,,,
+/home/osama/Desktop/CS224/Labs/Lab 4/Lab4/Lab4.srcs/sources_1/new/top_tb.sv,1586811292,systemVerilog,,,,top_tb,,,,,,,,
